@@ -8,6 +8,8 @@ import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 plt.style.use ('seaborn-paper')
 
+from matplotlib.ticker import FuncFormatter
+
 # Function to generate nameage plots
 def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
     dm = pd.read_csv ('~/ds/DeathProbsE_{}_Alt2_TR2014.csv'.format (_sex), skiprows = 1)
@@ -28,32 +30,21 @@ def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
     c['by'] = pd.to_datetime ('now').year - c.index
     c['adjc'] = c.adj.cumsum ()
 
+    m = c[c.adjc >= c.adjc.max () / 2].iloc[0].name
     d = c[['n', 'adj']]
     d.index.name = ''
 
     fig, ax = plt.subplots (1, 1, figsize = (8, 5))
     d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
     d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
-    plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    plt.axvline (x = m, c = 'k', ls = ':', lw = 0.8)
     ax.set_xlim (0, 100)
-    plt.legend ()
+    ax.get_yaxis ().set_major_formatter (FuncFormatter (lambda a, b: '{:,.0f}K'.format (a * 1e-3)))
+    ax.annotate ('{:.0f}'.format (m), xy = (m, 0), xycoords = 'data', xytext = (0, 4), textcoords = 'offset points', ha = 'center', va = 'center', size = 8, weight = 'bold', bbox = {'fc': 'white', 'ec': 'white', 'pad': 4, 'alpha': 1})
+    plt.legend (frameon = 0)
     plt.savefig ('an-{}.pdf'.format (_nam.lower ()))
     plt.close ()
     
-    # Another way to visualize
-    '''
-    d = c.set_index (['by'])[['n', 'adj']]
-    d.index.name = ''
-    fig, ax = plt.subplots (1, 1, figsize = (8, 5))
-    d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
-    d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
-    plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
-    ax.set_xlim (0, 100)
-    plt.legend ()
-    plt.savefig ('an-{}_alt.pdf'.format (_nam.lower ()))
-    plt.close ()
-    '''
-
 if __name__ == '__main__':
     # Download data sources from ssa.gov
     for _ in [
