@@ -35,8 +35,10 @@ def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
     d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
     d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
     plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    ax.set_xlim (0, 100)
     plt.legend ()
     plt.savefig ('an-{}.pdf'.format (_nam.lower ()))
+    plt.close ()
     
     # Another way to visualize
     '''
@@ -46,8 +48,10 @@ def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
     d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
     d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
     plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    ax.set_xlim (0, 100)
     plt.legend ()
     plt.savefig ('an-{}_alt.pdf'.format (_nam.lower ()))
+    plt.close ()
     '''
 
 if __name__ == '__main__':
