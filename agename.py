@@ -6,7 +6,7 @@ import zipfile
 import numpy as np, pandas as pd
 
 import matplotlib.pyplot as plt
-plt.style.use ('ggplot')
+plt.style.use ('seaborn-paper')
 
 # Function to generate nameage plots
 def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
@@ -30,16 +30,23 @@ def gen_na_plots (df, _nam = 'Rebecca', _sex = 'F'):
 
     d = c[['n', 'adj']]
     d.index.name = ''
-    d.rename (columns = {'n': 'Born', 'adj': 'Expected Living (2017)'}).plot (title = '{}: US Age Distribution'.format (_nam))
-    plt.axvline (x = c[c.adjc >= c.adjc.mean ()].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+
+    fig, ax = plt.subplots (1, 1, figsize = (8, 5))
+    d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
+    d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
+    plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    plt.legend ()
     plt.savefig ('an-{}.pdf'.format (_nam.lower ()))
     
     # Another way to visualize
     '''
     d = c.set_index (['by'])[['n', 'adj']]
     d.index.name = ''
-    d.rename (columns = {'n': 'Born', 'adj': 'Expected Living (2017)'}).plot (title = '{}: US SSN Registrations by Birth Year'.format (_nam))
-    plt.axvline (x = pd.to_datetime ('now').year - c[c.adjc >= c.adjc.mean ()].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    fig, ax = plt.subplots (1, 1, figsize = (8, 5))
+    d.n.rename ('Born').plot (title = '{}: US Age Distribution'.format (_nam))
+    d.adj.rename ('Expected Living (2017)').plot (kind = 'area', title = '{}: US Age Distribution'.format (_nam))
+    plt.axvline (x = c[c.adjc >= c.adjc.max () / 2].iloc[0].name, c = 'k', ls = ':', lw = 0.8)
+    plt.legend ()
     plt.savefig ('an-{}_alt.pdf'.format (_nam.lower ()))
     '''
 
