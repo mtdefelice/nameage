@@ -41,14 +41,22 @@ def plot_age_distribution(
         ax = fig.subplots()
 
         ax.plot(dist.index, dist["born"], label="Born")
-        ax.fill_between(
+        living_fill = ax.fill_between(
             dist.index,
             dist["expected_living"],
-            alpha=0.6,
+            alpha=0.25,
             label=f"Expected Living ({result.reference_year})",
         )
         if q75 > q25:
-            ax.axvspan(q25, q75, alpha=0.12, color="k", label=f"IQR ({q25}–{q75})")
+            iqr_mask = (dist.index >= q25) & (dist.index <= q75)
+            ax.fill_between(
+                dist.index,
+                dist["expected_living"],
+                where=iqr_mask,
+                color=living_fill.get_facecolor()[0][:3],
+                alpha=0.55,
+                label=f"IQR ({q25}–{q75})",
+            )
         ax.axvline(x=result.median_age, color="k", linestyle=":", linewidth=0.8)
 
         ax.set_title(
@@ -83,6 +91,6 @@ def plot_age_distribution(
         ax.legend(frameon=False)
 
         fig.tight_layout()
-        fig.savefig(out)
+        fig.savefig(out, dpi=150)
 
     return out

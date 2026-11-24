@@ -13,13 +13,13 @@ uv sync
 Ensure the SSA datasets are present in `ds/` (see [Updating the Source Data](#updating-the-source-data)), then run:
 
 ```bash
-# Single name (US national aggregate, PDF output in gitignored ./output/)
+# Single name (US national aggregate, PNG output in gitignored ./output/)
 uv run nameage John --sex M
 
 # Curated sample charts live in ./examples/
 
 # Multiple names in one pass (loads the 6.7M-row dataset once)
-uv run nameage John Paul --sex M --format png
+uv run nameage John Paul --sex M --format pdf
 
 # State-specific distribution and explicit reference year
 uv run nameage Lucy --sex F --region CA --year 2025
@@ -38,7 +38,7 @@ uv run nameage Lucy --sex F --region CA --year 2025
 | `--tr-year` | `2026` | SSA Trustees Report year for mortality tables |
 | `--data-dir` | `ds` | Directory containing SSA source files |
 | `--output-dir` | `output` | Output directory for generated charts |
-| `--format` | `pdf` | Output format: `pdf`, `png`, or `svg` |
+| `--format` | `png` | Output format: `png`, `pdf`, or `svg` |
 | `--refresh` | `false` | Re-download and re-extract SSA source files |
 
 ## Methodology & Caveats

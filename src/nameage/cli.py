@@ -110,9 +110,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--format",
         dest="image_format",
-        default="pdf",
-        choices=("pdf", "png", "svg"),
-        help="Output plot file format (default: pdf).",
+        default="png",
+        choices=("png", "pdf", "svg"),
+        help="Output plot file format (default: png).",
     )
     parser.add_argument(
         "--refresh",

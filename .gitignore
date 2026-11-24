@@ -24,6 +24,6 @@ ds/
 # Generated chart outputs (curated samples live in examples/)
 output/
 *.pdf
-!examples/**/*.pdf
-/nameage-*.png
-/nameage-*.svg
+*.png
+!examples/**/*.png
+*.svg
