@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 import urllib.error
@@ -16,6 +17,8 @@ Sex = Literal["F", "M"]
 
 DEFAULT_TR_YEAR = 2026
 SSA_BABYNAMES_STATE_URL = "https://www.ssa.gov/oact/babynames/state/namesbystate.zip"
+SSA_BABYNAMES_NATIONAL_URL = "https://www.ssa.gov/oact/babynames/names.zip"
+_YOB_FILE_PATTERN = re.compile(r"^yob(\d{4})\.txt$", re.IGNORECASE)
 _SEX_DTYPE = pd.CategoricalDtype(categories=["F", "M"])
 
 
@@ -93,28 +96,48 @@ def _extract_zip_safely(zip_path: Path, dest_dir: Path) -> None:
         raise
 
 
+def has_national_births(data_dir: Path | str) -> bool:
+    """Return True if extracted SSA national ``yobYYYY.txt`` files exist locally."""
+    names_dir = Path(data_dir) / "names"
+    return names_dir.is_dir() and any(
+        _YOB_FILE_PATTERN.match(p.name) for p in names_dir.iterdir() if p.is_file()
+    )
+
+
 def ensure_ssa_data(
     data_dir: Path | str,
     *,
     sex: Sex | None = None,
+    region: str = "US",
     tr_year: int = DEFAULT_TR_YEAR,
     refresh: bool = False,
 ) -> None:
     """Ensure required SSA baby-name and death-probability files exist locally.
 
-    Skips downloading ``namesbystate.zip`` when extracted ``*.TXT`` files already
-    exist (unless ``refresh=True``), and only checks the requested ``sex`` CSV
-    when ``sex`` is specified.
+    When ``region == "US"`` and national files (``names/yob*.txt`` or
+    ``names.zip``) exist locally, refreshes/extracts ``names.zip`` instead of
+    ``namesbystate.zip``. Otherwise skips downloading ``namesbystate.zip`` when
+    extracted ``*.TXT`` files already exist (unless ``refresh=True``), and only
+    checks the requested ``sex`` CSV when ``sex`` is specified.
     """
     base_dir = Path(data_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
 
     names_dir = base_dir / "namesbystate"
     zip_path = base_dir / "namesbystate.zip"
+    nat_dir = base_dir / "names"
+    nat_zip_path = base_dir / "names.zip"
+
+    has_nat_files = has_national_births(base_dir)
     has_state_files = names_dir.is_dir() and any(names_dir.glob("*.TXT"))
+    use_national = region.upper() == "US" and (has_nat_files or nat_zip_path.is_file())
+    need_national_files = use_national and (refresh or not has_nat_files)
+    need_state_files = not use_national and (refresh or not has_state_files)
 
     targets: list[tuple[str, Path]] = []
-    if refresh or not has_state_files:
+    if need_national_files:
+        targets.append((SSA_BABYNAMES_NATIONAL_URL, nat_zip_path))
+    if need_state_files:
         targets.append((SSA_BABYNAMES_STATE_URL, zip_path))
 
     sexes: tuple[Sex, ...] = (_validate_sex(sex),) if sex is not None else ("F", "M")
@@ -127,7 +150,9 @@ def ensure_ssa_data(
         if refresh or not dest.is_file():
             _download_atomic(url, dest)
 
-    if refresh or not has_state_files:
+    if need_national_files:
+        _extract_zip_safely(nat_zip_path, nat_dir)
+    if need_state_files:
         _extract_zip_safely(zip_path, names_dir)
 
 
@@ -172,6 +197,52 @@ def load_births(data_dir: Path | str) -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True)
     df["name"] = df["name"].astype("category")
     return df
+
+
+def load_national_births(data_dir: Path | str) -> pd.DataFrame:
+    """Load SSA national ``names/yobYYYY.txt`` files into the standard births schema.
+
+    Avoids the per-state ``< 5`` privacy suppression bias when querying ``US``.
+    Returns columns: ``state`` (``"US"``), ``sex``, ``birth_year``, ``name``, ``count``.
+    """
+    names_dir = Path(data_dir) / "names"
+    year_files_by_year: dict[int, Path] = {}
+    if names_dir.is_dir():
+        for path in sorted(names_dir.iterdir()):
+            if not path.is_file():
+                continue
+            match = _YOB_FILE_PATTERN.match(path.name)
+            if match:
+                year = int(match.group(1))
+                if year in year_files_by_year:
+                    raise ValueError(
+                        f"Duplicate national birth files for year {year}: "
+                        f"'{year_files_by_year[year].name}' and '{path.name}'."
+                    )
+                year_files_by_year[year] = path
+    year_files = sorted(year_files_by_year.items())
+    if not year_files:
+        raise FileNotFoundError(
+            f"No national yobYYYY.txt files found in '{names_dir}'. "
+            "Download and extract names.zip (see README.md)."
+        )
+
+    frames = []
+    for year, path in year_files:
+        frame = pd.read_csv(
+            path,
+            header=None,
+            names=["name", "sex", "count"],
+            dtype={"name": "string", "sex": _SEX_DTYPE, "count": "int32"},
+            na_filter=False,
+        )
+        frame["birth_year"] = pd.array([year] * len(frame), dtype="int16")
+        frames.append(frame)
+
+    df = pd.concat(frames, ignore_index=True)
+    df["state"] = pd.Categorical(["US"] * len(df), categories=["US"])
+    df["name"] = df["name"].astype("category")
+    return df[["state", "sex", "birth_year", "name", "count"]]
 
 
 def load_death_probabilities(

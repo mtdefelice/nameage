@@ -30,7 +30,11 @@ def plot_age_distribution(
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     dist = result.distribution
-    x_upper = max(max_age, result.median_age)
+    q25, q75 = result.iqr
+    x_lower = int(dist.index.min())
+    x_upper = max(max_age, result.median_age, q75)
+    if x_lower >= x_upper:
+        x_upper = max(int(dist.index.max()), x_lower + 1)
 
     with mpl_style.context(PLOT_STYLE):
         fig = Figure(figsize=(8, 5))
@@ -43,6 +47,8 @@ def plot_age_distribution(
             alpha=0.6,
             label=f"Expected Living ({result.reference_year})",
         )
+        if q75 > q25:
+            ax.axvspan(q25, q75, alpha=0.12, color="k", label=f"IQR ({q25}–{q75})")
         ax.axvline(x=result.median_age, color="k", linestyle=":", linewidth=0.8)
 
         ax.set_title(
@@ -50,11 +56,11 @@ def plot_age_distribution(
             f"{result.expected_living:,.0f} Expected"
         )
         ax.set_xlabel("Age")
-        ax.set_xlim(0, x_upper)
+        ax.set_xlim(x_lower, x_upper)
         ax.set_ylim(bottom=0)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:,.0f}"))
 
-        if result.median_age == 0:
+        if result.median_age <= x_lower:
             ha, offset = "left", (4, 6)
         elif result.median_age >= x_upper:
             ha, offset = "right", (-4, 6)

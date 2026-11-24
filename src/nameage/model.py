@@ -18,18 +18,35 @@ class NameAgeResult:
     region: str
     reference_year: int
     median_age: int
+    mean_age: float
+    mode_age: int
+    iqr: tuple[int, int]
+    ci90: tuple[int, int]
     expected_living: float
     distribution: pd.DataFrame
 
 
+def _quantile_age(cdf: pd.Series, q: float) -> int:
+    """Return the smallest integer age whose cumulative probability reaches ``q``."""
+    matches = cdf.loc[cdf >= q]
+    if matches.empty:
+        return int(cdf.index[-1])
+    return int(matches.index[0])
+
+
 def compute_survival_curve(death_probs: pd.DataFrame, year: int) -> pd.Series:
-    """Compute cumulative survival probability by age from a period mortality table.
+    """Compute mid-interval survival probabilities from a period mortality table.
 
     Uses the single calendar-year row ``year`` (period life-table approximation)
     across the full contiguous integer age range ``0..max_age`` before any join
     with birth counts, ensuring missing birth years are never treated as 0%
-    mortality. Value at age ``a`` represents survival through the end of age
-    ``a``: ``prod_{x=0..a} (1 - q_x)``.
+    mortality.
+
+    Under uniform distribution of births within each birth year and deaths
+    within each year of age, the expected fraction of the cohort born in
+    ``year - a`` still alive at the end of ``year`` is the stationary life-table
+    ratio ``L_a / l_0 = 0.5 * (l_a + l_{a+1}) / l_0``, where
+    ``l_0 = 1`` and ``l_{a+1} = prod_{x=0..a} (1 - q_x)``.
     """
     if death_probs.empty:
         raise ValueError("Mortality table is empty.")
@@ -60,7 +77,9 @@ def compute_survival_curve(death_probs: pd.DataFrame, year: int) -> pd.Series:
             f"Mortality probabilities for {year} must be finite values in [0, 1]."
         )
 
-    survival = (1.0 - qx).cumprod()
+    l_next = (1.0 - qx).cumprod()
+    l_start = l_next.shift(1, fill_value=1.0)
+    survival = 0.5 * (l_start + l_next)
     survival.index.name = "age"
     survival.name = "survival_prob"
     return survival
@@ -74,8 +93,10 @@ def estimate_age_distribution(
     sex: Sex,
     region: str = "US",
     reference_year: int | None = None,
+    min_age: int | None = None,
+    max_age: int | None = None,
 ) -> NameAgeResult:
-    """Estimate born counts, expected living counts, and median age for a name.
+    """Estimate born counts, expected living counts, and age quantiles for a name.
 
     Args:
         births: DataFrame with ``state``, ``sex``, ``birth_year``, ``name``, ``count``.
@@ -85,9 +106,21 @@ def estimate_age_distribution(
         region: ``"US"`` for all states combined, or a 2-letter U.S. state/DC code.
         reference_year: Calendar year for age calculation and mortality lookup.
             Defaults to the latest ``birth_year`` in ``births``.
+        min_age: Optional inclusive lower age bound for conditioning the posterior
+            (e.g., ``18`` for adults).
+        max_age: Optional inclusive upper age bound for conditioning the posterior.
     """
     if sex not in ("F", "M"):
         raise ValueError(f"sex must be 'F' or 'M', got {sex!r}")
+
+    if min_age is not None and min_age < 0:
+        raise ValueError(f"min_age must be non-negative, got {min_age!r}")
+    if max_age is not None and max_age < 0:
+        raise ValueError(f"max_age must be non-negative, got {max_age!r}")
+    if min_age is not None and max_age is not None and min_age > max_age:
+        raise ValueError(
+            f"min_age ({min_age}) must be less than or equal to max_age ({max_age})."
+        )
 
     if births.empty:
         raise ValueError("Births dataset is empty.")
@@ -142,6 +175,16 @@ def estimate_age_distribution(
         },
         index=survival.index,
     )
+    if min_age is not None or max_age is not None:
+        lower = min_age if min_age is not None else int(dist.index.min())
+        upper = max_age if max_age is not None else int(dist.index.max())
+        dist = dist.loc[(dist.index >= lower) & (dist.index <= upper)]
+        if dist.empty:
+            raise ValueError(
+                f"Age range [{lower}, {upper}] does not overlap mortality table "
+                f"({int(survival.index.min())}–{int(survival.index.max())})."
+            )
+
     dist["expected_living"] = dist["born"] * dist["survival_prob"]
     dist["birth_year"] = ref_year - dist.index
     dist["cum_living"] = dist["expected_living"].cumsum()
@@ -150,7 +193,14 @@ def estimate_age_distribution(
     if total_living <= 0.0:
         raise ValueError(f"Expected living population is zero for {canonical_name!r}.")
 
-    median_age = int(dist.loc[dist["cum_living"] >= total_living / 2.0].index[0])
+    dist["prob"] = dist["expected_living"] / total_living
+    dist["cdf"] = dist["cum_living"] / total_living
+
+    median_age = _quantile_age(dist["cdf"], 0.50)
+    mean_age = float((dist.index.to_series() * dist["prob"]).sum())
+    mode_age = int(dist["expected_living"].idxmax())
+    iqr = (_quantile_age(dist["cdf"], 0.25), _quantile_age(dist["cdf"], 0.75))
+    ci90 = (_quantile_age(dist["cdf"], 0.05), _quantile_age(dist["cdf"], 0.95))
 
     return NameAgeResult(
         name=canonical_name,
@@ -158,6 +208,10 @@ def estimate_age_distribution(
         region=normalized_region,
         reference_year=ref_year,
         median_age=median_age,
+        mean_age=mean_age,
+        mode_age=mode_age,
+        iqr=iqr,
+        ci90=ci90,
         expected_living=total_living,
         distribution=dist,
     )

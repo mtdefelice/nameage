@@ -9,12 +9,15 @@ import pandas as pd
 import pytest
 
 from nameage.data import (
+    SSA_BABYNAMES_NATIONAL_URL,
     _extract_zip_safely,
     death_probs_filename,
     death_probs_url,
     ensure_ssa_data,
+    has_national_births,
     load_births,
     load_death_probabilities,
+    load_national_births,
 )
 
 
@@ -83,3 +86,78 @@ def test_extract_zip_safely_rejects_zip_slip(tmp_path: Path) -> None:
         _extract_zip_safely(bad_zip, dest)
     assert not dest.exists()
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_load_national_births_and_offline_ensure_us(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert not has_national_births(tmp_path)
+
+    nat_dir = tmp_path / "names"
+    nat_dir.mkdir()
+    (nat_dir / "yob2024.txt").write_text("Ada,F,12\nNone,F,5\n", encoding="utf-8")
+    (nat_dir / "yob2025.txt").write_text("John,M,30\n", encoding="utf-8")
+    _write_mortality_csv(tmp_path / death_probs_filename("F", 2026))
+
+    assert has_national_births(tmp_path)
+    df = load_national_births(tmp_path)
+    assert list(df.columns) == ["state", "sex", "birth_year", "name", "count"]
+    assert len(df) == 3
+    assert list(df["state"].cat.categories) == ["US"]
+    assert "None" in set(df["name"])
+    assert not df["name"].isna().any()
+
+    def _forbid_download(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "Should not download namesbystate.zip for US national data"
+        )
+
+    monkeypatch.setattr("nameage.data._download_atomic", _forbid_download)
+    ensure_ssa_data(tmp_path, sex="F", region="US", tr_year=2026, refresh=False)
+
+
+def test_ensure_ssa_data_extracts_local_names_zip_and_refreshes_national(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nat_zip = tmp_path / "names.zip"
+    with zipfile.ZipFile(nat_zip, "w") as zf:
+        zf.writestr("yob2025.txt", "Ada,F,42\n")
+    _write_mortality_csv(tmp_path / death_probs_filename("F", 2026))
+
+    def _forbid_download(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Should extract existing names.zip offline")
+
+    monkeypatch.setattr("nameage.data._download_atomic", _forbid_download)
+    ensure_ssa_data(tmp_path, sex="F", region="US", tr_year=2026, refresh=False)
+    assert has_national_births(tmp_path)
+    df = load_national_births(tmp_path)
+    assert int(df.loc[0, "count"]) == 42
+
+    # Refreshing US with national data installed must target SSA_BABYNAMES_NATIONAL_URL
+    downloaded_urls: list[str] = []
+
+    def _fake_download(url: str, dest: Path, timeout: float = 30.0) -> None:
+        downloaded_urls.append(url)
+        if dest.suffix == ".zip":
+            with zipfile.ZipFile(dest, "w") as zf:
+                zf.writestr("yob2025.txt", "Ada,F,99\n")
+        else:
+            _write_mortality_csv(dest)
+
+    monkeypatch.setattr("nameage.data._download_atomic", _fake_download)
+    ensure_ssa_data(tmp_path, sex="F", region="US", tr_year=2026, refresh=True)
+    assert SSA_BABYNAMES_NATIONAL_URL in downloaded_urls
+    assert int(load_national_births(tmp_path).loc[0, "count"]) == 99
+
+
+def test_load_national_births_rejects_duplicate_year_files(tmp_path: Path) -> None:
+    nat_dir = tmp_path / "names"
+    nat_dir.mkdir()
+    (nat_dir / "yob2024.txt").write_text("Ada,F,10\n", encoding="utf-8")
+    (nat_dir / "YOB2024.TXT").write_text("Ada,F,10\n", encoding="utf-8")
+    if len(list(nat_dir.iterdir())) < 2:
+        pytest.skip("Filesystem is case-insensitive")
+    with pytest.raises(
+        ValueError, match="Duplicate national birth files for year 2024"
+    ):
+        load_national_births(tmp_path)

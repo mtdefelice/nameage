@@ -1,6 +1,6 @@
 """Estimate U.S. living age distributions by first name from SSA datasets."""
 
-from nameage.data import load_births, load_death_probabilities
+from nameage.data import load_births, load_death_probabilities, load_national_births
 from nameage.model import (
     NameAgeResult,
     compute_survival_curve,
@@ -14,5 +14,6 @@ __all__ = [
     "estimate_age_distribution",
     "load_births",
     "load_death_probabilities",
+    "load_national_births",
     "plot_age_distribution",
 ]

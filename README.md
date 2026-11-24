@@ -32,7 +32,9 @@ uv run nameage Lucy --sex F --region CA --year 2025
 | `names` | *(required)* | One or more first names to plot (case-insensitive) |
 | `--sex {F,M}` | *(required)* | Sex recorded on SSA birth records |
 | `--region` | `US` | `US` (all states combined) or 2-letter U.S. state/DC code |
-| `--year` | latest birth year | Reference calendar year (must exist in mortality table, e.g. `2024–2100` for `TR2026`) |
+| `--year` | latest birth year | Reference calendar year (must exist in mortality table; years after the latest birth year warn and treat unobserved recent births as 0) |
+| `--min-age` | *(none)* | Optional inclusive lower age bound for conditioning the posterior (e.g., `18` for adults) |
+| `--max-age` | *(none)* | Optional inclusive upper age bound for conditioning the posterior |
 | `--tr-year` | `2026` | SSA Trustees Report year for mortality tables |
 | `--data-dir` | `ds` | Directory containing SSA source files |
 | `--output-dir` | `output` | Output directory for generated charts |
@@ -41,8 +43,12 @@ uv run nameage Lucy --sex F --region CA --year 2025
 
 ## Methodology & Caveats
 
-- **Period life-table approximation**: For a given reference year $Y$, `nameage` takes that year's single-year-of-age death probabilities $q_0, q_1, \dots, q_{119}$ and computes cumulative survival $S(a) = \prod_{x=0}^{a} (1 - q_x)$ across the full contiguous age range before joining with birth counts. Expected living counts at age $a$ are $\text{born}(Y - a) \cdot S(a)$. This is a standard period life-table approximation (it applies reference-year mortality rather than historical cohort mortality).
-- **SSA `< 5` privacy suppression**: SSA's state-level dataset omits any name with fewer than 5 occurrences in a given state and year. Summing all states for `US` slightly undercounts rarer names compared to SSA's national archive (`https://www.ssa.gov/oact/babynames/names.zip`).
+- **Mid-interval period life-table survival**: For a given reference year $Y$, `nameage` takes that year's single-year-of-age death probabilities $q_0, q_1, \dots, q_{119}$ and computes exact-age survival $l_0 = 1$, $l_{a+1} = \prod_{x=0}^{a} (1 - q_x)$, then the stationary mid-interval survival ratio $S(a) = L_a / l_0 = \tfrac{1}{2}(l_a + l_{a+1})$ across the full contiguous age range before joining with birth counts. Expected living counts at age $a$ are $\text{born}(Y - a) \cdot S(a)$, normalized into a posterior PMF with median, mean, mode, IQR (25th–75th), and 90% interval (5th–95th).
+- **Period vs. cohort mortality**: Applying reference-year mortality $q_x(Y)$ rather than historical cohort mortality $q_{x,\, Y - a + x}$ overestimates survival of older cohorts (who experienced higher historical mortality), introducing an upward bias in predicted age for older and multi-generational names.
+- **SSA `< 5` per-state privacy suppression**: SSA's state-level dataset omits any name with fewer than 5 occurrences in a given state and year. Because modern name diversity is much higher than mid-century, summing all states for `US` drops ~23% of 2024–2025 births (vs. ~8% in 1950), clipping recent cohorts more aggressively for uncommon names. To eliminate this for `--region US`, optionally download SSA's national archive (`https://www.ssa.gov/oact/babynames/names.zip`) and extract `yobYYYY.txt` into `ds/names/`; `nameage` uses it automatically for `US` when present.
+- **Closed population & migration**: SSA birth records cover U.S.-born SSN holders only (excluding foreign-born residents, ~14% of the U.S. population). For `--region <STATE>`, `namesbystate.zip` reflects **state of birth** (or state of SSN issuance prior to 1987), not state of residence, and uses national rather than state-specific mortality.
+- **Pre-1937 / pre-1987 SSN registration bias**: Because SSNs were introduced in 1936 and Enumeration at Birth began in 1987, older cohorts appear in SSA data only if they survived long enough to apply for an SSN; applying full-life survival double-counts their early-life mortality.
+- **Name-independent mortality & legal names**: Mortality is conditioned only on sex and age (not socioeconomic/demographic correlates of first names), and counts reflect legal first names at birth rather than nicknames or name changes. Use `--min-age` / `--max-age` when you know the subject is an adult or within a specific age range.
 
 ## Data Sources
 
@@ -51,6 +57,7 @@ All source datasets are published by the **U.S. Social Security Administration, 
 | Dataset | Local Path | Official SSA Page | Direct File URL | Coverage |
 |---|---|---|---|---|
 | Baby Names by State | `ds/namesbystate.zip` (`ds/namesbystate/*.TXT`) | [Popular Baby Names — Beyond the Top 1000](https://www.ssa.gov/oact/babynames/limits.html) | `https://www.ssa.gov/oact/babynames/state/namesbystate.zip` | 1910–2025 (50 states + DC; 6,696,687 rows) |
+| Baby Names National *(optional, preferred for `US`)* | `ds/names.zip` (`ds/names/yob*.txt`) | [Popular Baby Names — Beyond the Top 1000](https://www.ssa.gov/oact/babynames/limits.html) | `https://www.ssa.gov/oact/babynames/names.zip` | 1880–2025 (national `< 5` threshold) |
 | Female Death Probabilities (TR2026, Alt2) | `ds/DeathProbsE_F_Alt2_TR2026.csv` | [OASDI Trustees Report Downloadable Files](https://www.ssa.gov/oact/Downloadables/CY/index.html) | `https://www.ssa.gov/oact/Downloadables/CY/DeathProbsE_F_Alt2_TR2026.csv` | Calendar years 2024–2100, ages 0–119 |
 | Male Death Probabilities (TR2026, Alt2) | `ds/DeathProbsE_M_Alt2_TR2026.csv` | [OASDI Trustees Report Downloadable Files](https://www.ssa.gov/oact/Downloadables/CY/index.html) | `https://www.ssa.gov/oact/Downloadables/CY/DeathProbsE_M_Alt2_TR2026.csv` | Calendar years 2024–2100, ages 0–119 |
 

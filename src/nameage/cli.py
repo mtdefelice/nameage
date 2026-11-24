@@ -12,8 +12,10 @@ from nameage.data import (
     DEFAULT_TR_YEAR,
     Sex,
     ensure_ssa_data,
+    has_national_births,
     load_births,
     load_death_probabilities,
+    load_national_births,
 )
 from nameage.model import estimate_age_distribution
 from nameage.plot import plot_age_distribution
@@ -73,6 +75,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reference calendar year (defaults to latest birth year in dataset).",
     )
     parser.add_argument(
+        "--min-age",
+        type=int,
+        default=None,
+        help="Optional inclusive lower age bound (e.g., 18 to condition on adults).",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int,
+        default=None,
+        help="Optional inclusive upper age bound.",
+    )
+    parser.add_argument(
         "--tr-year",
         type=int,
         default=DEFAULT_TR_YEAR,
@@ -117,14 +131,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         ensure_ssa_data(
             args.data_dir,
             sex=sex,
+            region=args.region,
             tr_year=args.tr_year,
             refresh=args.refresh,
         )
-        births = load_births(args.data_dir)
+        if args.region == "US" and has_national_births(args.data_dir):
+            births = load_national_births(args.data_dir)
+        else:
+            births = load_births(args.data_dir)
         death_probs = load_death_probabilities(args.data_dir, sex, tr_year=args.tr_year)
     except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
         print(f"nameage: error: {exc}", file=sys.stderr)
         return 1
+
+    if args.year is not None and not births.empty:
+        latest_birth_year = int(births["birth_year"].max())
+        if args.year > latest_birth_year:
+            print(
+                f"nameage: warning: reference year {args.year} is after latest birth "
+                f"year {latest_birth_year}; ages 0–{args.year - latest_birth_year - 1} "
+                "have no birth records and are treated as 0.",
+                file=sys.stderr,
+            )
 
     had_error = False
     for raw_name in args.names:
@@ -136,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sex=sex,
                 region=args.region,
                 reference_year=args.year,
+                min_age=args.min_age,
+                max_age=args.max_age,
             )
             out_path = _safe_output_path(
                 args.output_dir, result.region, result.name, args.image_format
@@ -146,9 +176,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             had_error = True
             continue
 
+        q25, q75 = result.iqr
         print(
             f"{result.name} ({result.region}, {result.sex}, {result.reference_year}): "
-            f"median age {result.median_age}, "
+            f"median age {result.median_age} (IQR {q25}–{q75}, "
+            f"mean {result.mean_age:.1f}), "
             f"expected living {result.expected_living:,.0f} -> {out_path}"
         )
 
