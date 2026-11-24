@@ -11,6 +11,7 @@ from matplotlib.ticker import FuncFormatter
 from nameage.model import NameAgeResult
 
 PLOT_STYLE = "seaborn-v0_8-paper"
+DEFAULT_DPI = 300
 
 
 def plot_age_distribution(
@@ -18,6 +19,7 @@ def plot_age_distribution(
     output_path: Path | str,
     *,
     max_age: int = 100,
+    dpi: int = DEFAULT_DPI,
 ) -> Path:
     """Render and save the born vs. expected-living age distribution chart.
 
@@ -26,6 +28,8 @@ def plot_age_distribution(
     """
     if max_age <= 0:
         raise ValueError(f"max_age must be positive, got {max_age!r}")
+    if dpi <= 0:
+        raise ValueError(f"dpi must be positive, got {dpi!r}")
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +95,6 @@ def plot_age_distribution(
         ax.legend(frameon=False)
 
         fig.tight_layout()
-        fig.savefig(out, dpi=150)
+        fig.savefig(out, dpi=dpi)
 
     return out
