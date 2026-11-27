@@ -71,12 +71,16 @@
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const meta = await resp.json();
 
+      const sortedRegions = [...meta.regions].sort((a, b) => {
+        if (a === "US") return -1;
+        if (b === "US") return 1;
+        return (STATE_NAMES[a] || a).localeCompare(STATE_NAMES[b] || b);
+      });
       regionSelect.innerHTML = "";
-      for (const code of meta.regions) {
+      for (const code of sortedRegions) {
         const opt = document.createElement("option");
         opt.value = code;
-        const label = STATE_NAMES[code] ? `${code} — ${STATE_NAMES[code]}` : code;
-        opt.textContent = label;
+        opt.textContent = STATE_NAMES[code] || code;
         regionSelect.appendChild(opt);
       }
 
@@ -240,6 +244,8 @@
     });
   });
 
+  nameInput.addEventListener("focus", () => nameInput.select());
+
   async function init() {
     await loadMetadata();
     const initial = new URLSearchParams(window.location.search);
@@ -251,8 +257,12 @@
       if (initial.has("min_age")) minAgeInput.value = initial.get("min_age") || "";
       if (initial.has("max_age")) maxAgeInput.value = initial.get("max_age") || "";
       runQuery({ syncUrl: false });
+    } else if (!nameInput.value.trim() && !activeController) {
+      nameInput.value = "Lucy";
+      sexSelect.value = "F";
+      nameInput.select();
+      runQuery({ syncUrl: false });
     }
   }
-
   init();
 })();
