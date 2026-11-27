@@ -293,3 +293,22 @@ def test_plot_concurrency_cap_returns_503_without_starving_health(
         finally:
             release.set()
         assert first.result(timeout=5.0).status_code == 200
+
+
+def test_web_ui_and_static_assets() -> None:
+    app = create_app(store=_make_store())
+    with TestClient(app) as client:
+        index = client.get("/")
+        assert index.status_code == 200
+        assert index.headers["content-type"].startswith("text/html")
+        assert index.headers["x-content-type-options"] == "nosniff"
+        assert "/static/styles.css" in index.text
+        assert "/static/app.js" in index.text
+
+        css = client.get("/static/styles.css")
+        assert css.status_code == 200
+        assert "text/css" in css.headers["content-type"]
+
+        js = client.get("/static/app.js")
+        assert js.status_code == 200
+        assert "javascript" in js.headers["content-type"]

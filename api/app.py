@@ -7,11 +7,13 @@ import threading
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.config import Settings
 from api.schemas import EstimateResponse, HealthResponse, MetadataResponse
@@ -19,6 +21,7 @@ from api.store import InvalidQueryError, NameAgeStore, NameNotFoundError
 from nameage.data import Sex
 from nameage.plot import PlotFormat, render_age_distribution
 
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MEDIA_TYPES: dict[PlotFormat, str] = {
     "png": "image/png",
     "svg": "image/svg+xml",
@@ -135,6 +138,12 @@ def create_app(
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     cache_header = f"public, max-age={cfg.cache_max_age}"
+
+    application.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+    @application.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(_STATIC_DIR / "index.html")
 
     @application.get("/health", response_model=HealthResponse, tags=["system"])
     def health(

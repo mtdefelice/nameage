@@ -50,12 +50,13 @@ uv sync --extra api
 uv run uvicorn api.app:app --host 0.0.0.0 --port 8000
 ```
 
-Interactive OpenAPI docs are available at `http://localhost:8000/docs`.
+Open the web UI at `http://localhost:8000/` or interactive OpenAPI docs at `http://localhost:8000/docs`.
 
 ### Endpoints
 
 | Method & Path | Description |
 |---|---|
+| `GET /` | Web UI for interactive name lookups and SVG charts |
 | `GET /health` | Liveness/readiness check and loaded dataset summary |
 | `GET /v1/metadata` | Available regions, latest birth years, and mortality year range |
 | `GET /v1/estimate` | JSON age distribution & summary stats (`?name=John&sex=M&region=US`) |

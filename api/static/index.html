@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nameage — U.S. Living Age Distribution by First Name</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div class="header-row">
+          <div>
+            <h1>nameage</h1>
+            <p class="subtitle">
+              Estimate the living U.S. age distribution of a first name from SSA
+              birth records and actuarial life tables.
+            </p>
+          </div>
+          <span id="dataset-badge" class="badge" aria-live="polite">
+            Loading dataset…
+          </span>
+        </div>
+      </header>
+
+      <section class="card form-card" aria-label="Query form">
+        <form id="query-form" novalidate>
+          <div class="form-grid">
+            <div class="field field-name">
+              <label for="name">First name</label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="e.g. Lucy, John, Rita"
+                maxlength="64"
+                autocomplete="given-name"
+                required
+                autofocus
+              />
+            </div>
+
+            <div class="field">
+              <label for="sex">Sex (SSA record)</label>
+              <select id="sex" name="sex">
+                <option value="F">Female (F)</option>
+                <option value="M">Male (M)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="region">Region</label>
+              <select id="region" name="region">
+                <option value="US">US — United States (All)</option>
+              </select>
+            </div>
+
+            <div class="field field-submit">
+              <button id="submit-btn" type="submit" class="btn-primary">
+                Estimate
+              </button>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <div class="examples" aria-label="Example queries">
+              <span class="examples-label">Try:</span>
+              <button type="button" class="chip" data-name="Lucy" data-sex="F">
+                Lucy (F)
+              </button>
+              <button type="button" class="chip" data-name="John" data-sex="M">
+                John (M)
+              </button>
+              <button type="button" class="chip" data-name="Rita" data-sex="F">
+                Rita (F)
+              </button>
+              <button type="button" class="chip" data-name="Paul" data-sex="M">
+                Paul (M)
+              </button>
+            </div>
+
+            <details class="advanced">
+              <summary>Advanced filters</summary>
+              <div class="advanced-grid">
+                <div class="field">
+                  <label for="year">Reference year</label>
+                  <input
+                    id="year"
+                    name="year"
+                    type="number"
+                    min="1880"
+                    max="2200"
+                    placeholder="Latest"
+                  />
+                </div>
+                <div class="field">
+                  <label for="min_age">Min age</label>
+                  <input
+                    id="min_age"
+                    name="min_age"
+                    type="number"
+                    min="0"
+                    max="120"
+                    placeholder="0"
+                  />
+                </div>
+                <div class="field">
+                  <label for="max_age">Max age</label>
+                  <input
+                    id="max_age"
+                    name="max_age"
+                    type="number"
+                    min="0"
+                    max="120"
+                    placeholder="119"
+                  />
+                </div>
+              </div>
+            </details>
+          </div>
+        </form>
+      </section>
+
+      <div id="error-banner" class="alert alert-error" role="alert" hidden></div>
+
+      <section id="results" class="results" hidden aria-live="polite">
+        <div id="warning-banner" class="alert alert-warning" hidden></div>
+
+        <div class="stats-grid">
+          <article class="card stat-card">
+            <span class="stat-label">Median age</span>
+            <strong id="stat-median" class="stat-value">—</strong>
+            <span id="stat-sub-median" class="stat-sub"></span>
+          </article>
+          <article class="card stat-card">
+            <span class="stat-label">Interquartile range</span>
+            <strong id="stat-iqr" class="stat-value">—</strong>
+            <span class="stat-sub">25th – 75th percentile</span>
+          </article>
+          <article class="card stat-card">
+            <span class="stat-label">Mean / Mode</span>
+            <strong id="stat-mean-mode" class="stat-value">—</strong>
+            <span id="stat-ci90" class="stat-sub"></span>
+          </article>
+          <article class="card stat-card">
+            <span class="stat-label">Expected living</span>
+            <strong id="stat-living" class="stat-value">—</strong>
+            <span id="stat-context" class="stat-sub"></span>
+          </article>
+        </div>
+
+        <article class="card chart-card">
+          <div class="chart-header">
+            <h2 id="chart-title">Age distribution</h2>
+            <div class="chart-actions">
+              <a id="download-svg" class="btn-secondary" download>Download SVG</a>
+              <a id="download-png" class="btn-secondary" download>Download PNG</a>
+            </div>
+          </div>
+          <div class="chart-frame">
+            <div id="chart-loading" class="chart-loading" hidden>
+              Rendering SVG…
+            </div>
+            <img id="chart-img" alt="Age distribution chart" hidden />
+          </div>
+        </article>
+      </section>
+
+      <footer class="footer">
+        <span>Data: U.S. Social Security Administration (OACT)</span>
+        <span aria-hidden="true">·</span>
+        <a href="/docs">OpenAPI Docs</a>
+      </footer>
+    </main>
+  </body>
+</html>
