@@ -374,15 +374,6 @@ h1 {
   color: var(--muted);
 }
 
-.footer a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.footer a:hover {
-  text-decoration: underline;
-}
-
 @media (max-width: 760px) {
   .form-grid {
     grid-template-columns: 1fr 1fr;
