@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
+import threading
 from pathlib import Path
+from typing import Literal
 
 from matplotlib import style as mpl_style
 from matplotlib.figure import Figure
@@ -12,27 +15,31 @@ from nameage.model import NameAgeResult
 
 PLOT_STYLE = "seaborn-v0_8-paper"
 DEFAULT_DPI = 300
+PlotFormat = Literal["png", "svg", "pdf"]
+
+# Matplotlib's style.context mutates global rcParams; serialize styled renders.
+_PLOT_LOCK = threading.Lock()
 
 
-def plot_age_distribution(
+def render_age_distribution(
     result: NameAgeResult,
-    output_path: Path | str,
     *,
+    fmt: PlotFormat = "png",
     max_age: int = 100,
     dpi: int = DEFAULT_DPI,
-) -> Path:
-    """Render and save the born vs. expected-living age distribution chart.
+) -> bytes:
+    """Render the age distribution chart to in-memory bytes (thread-safe).
 
     Uses ``matplotlib.figure.Figure`` directly so importing or calling this
     function never mutates Matplotlib's global backend or ``pyplot`` state.
     """
+    if fmt not in ("png", "svg", "pdf"):
+        raise ValueError(f"fmt must be 'png', 'svg', or 'pdf', got {fmt!r}")
     if max_age <= 0:
         raise ValueError(f"max_age must be positive, got {max_age!r}")
     if dpi <= 0:
         raise ValueError(f"dpi must be positive, got {dpi!r}")
 
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
     dist = result.distribution
     q25, q75 = result.iqr
     x_lower = int(dist.index.min())
@@ -40,7 +47,8 @@ def plot_age_distribution(
     if x_lower >= x_upper:
         x_upper = max(int(dist.index.max()), x_lower + 1)
 
-    with mpl_style.context(PLOT_STYLE):
+    buf = io.BytesIO()
+    with _PLOT_LOCK, mpl_style.context(PLOT_STYLE):
         fig = Figure(figsize=(8, 5))
         ax = fig.subplots()
 
@@ -95,6 +103,36 @@ def plot_age_distribution(
         ax.legend(frameon=False)
 
         fig.tight_layout()
-        fig.savefig(out, dpi=dpi)
+        fig.savefig(buf, format=fmt, dpi=dpi)
 
+    return buf.getvalue()
+
+
+def plot_age_distribution(
+    result: NameAgeResult,
+    output_path: Path | str,
+    *,
+    max_age: int = 100,
+    dpi: int = DEFAULT_DPI,
+) -> Path:
+    """Render and save the born vs. expected-living age distribution chart.
+
+    Uses ``matplotlib.figure.Figure`` directly so importing or calling this
+    function never mutates Matplotlib's global backend or ``pyplot`` state.
+    """
+    out = Path(output_path)
+    ext = out.suffix.lstrip(".").lower() or "png"
+    if ext not in ("png", "svg", "pdf"):
+        raise ValueError(
+            f"Unsupported output extension {out.suffix!r}; "
+            "expected .png, .svg, or .pdf."
+        )
+    image_bytes = render_age_distribution(
+        result,
+        fmt=ext,
+        max_age=max_age,
+        dpi=dpi,  # type: ignore[arg-type]
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(image_bytes)
     return out

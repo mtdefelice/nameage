@@ -41,6 +41,56 @@ uv run nameage Lucy --sex F --region CA --year 2025
 | `--format` | `png` | Output format: `png`, `pdf`, or `svg` |
 | `--refresh` | `false` | Re-download and re-extract SSA source files |
 
+## Web Service (FastAPI)
+
+Install the optional `api` dependencies and run the service locally:
+
+```bash
+uv sync --extra api
+uv run uvicorn api.app:app --host 0.0.0.0 --port 8000
+```
+
+Interactive OpenAPI docs are available at `http://localhost:8000/docs`.
+
+### Endpoints
+
+| Method & Path | Description |
+|---|---|
+| `GET /health` | Liveness/readiness check and loaded dataset summary |
+| `GET /v1/metadata` | Available regions, latest birth years, and mortality year range |
+| `GET /v1/estimate` | JSON age distribution & summary stats (`?name=John&sex=M&region=US`) |
+| `GET /v1/plot` | Rendered chart bytes (`?name=John&sex=M&region=US&format=png\|svg\|pdf`) |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `NAMEAGE_DATA_DIR` | `ds` | Directory containing SSA source files |
+| `NAMEAGE_TR_YEAR` | `2026` | SSA Trustees Report year for mortality tables |
+| `NAMEAGE_CACHE_MAX_AGE` | `86400` | `Cache-Control` max-age (seconds) on read endpoints |
+| `NAMEAGE_CORS_ORIGINS` | *(unset)* | Comma-separated allowed CORS origins |
+| `NAMEAGE_PLOT_MAX_CONCURRENCY` | `4` | Max concurrent `/v1/plot` renders before returning `503` |
+| `NAMEAGE_PLOT_CACHE_SIZE` | `128` | In-memory LRU cache entries for rendered plots (`0` disables) |
+
+### Docker
+
+Build from the repository root and mount `ds/` read-only at `/data`:
+
+```bash
+docker build -f api/Dockerfile -t nameage-api .
+docker run --rm -p 8000:8000 -v "$(pwd)/ds:/data:ro" nameage-api
+```
+
+### Repository Layout
+
+```text
+nameage/
+├── src/nameage/      # Core library (data, indexed model, thread-safe plot) + CLI
+├── api/              # FastAPI service (app, store, schemas, config) + Dockerfile
+├── tests/            # Unit and integration tests (core, CLI, API)
+└── ds/               # Gitignored SSA datasets (mounted into container at /data)
+```
+
 ## Methodology & Caveats
 
 - **Mid-interval period life-table survival**: For a given reference year $Y$, `nameage` takes that year's single-year-of-age death probabilities $q_0, q_1, \dots, q_{119}$ and computes exact-age survival $l_0 = 1$, $l_{a+1} = \prod_{x=0}^{a} (1 - q_x)$, then the stationary mid-interval survival ratio $S(a) = L_a / l_0 = \tfrac{1}{2}(l_a + l_{a+1})$ across the full contiguous age range before joining with birth counts. Expected living counts at age $a$ are $\text{born}(Y - a) \cdot S(a)$, normalized into a posterior PMF with median, mean, mode, IQR (25th–75th), and 90% interval (5th–95th).

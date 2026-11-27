@@ -5,7 +5,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from nameage.model import compute_survival_curve, estimate_age_distribution
+from nameage.model import (
+    BirthsIndex,
+    compute_survival_curve,
+    estimate_age_distribution,
+)
 
 
 def _make_death_probs(
@@ -245,3 +249,146 @@ def test_exact_quantile_boundaries_without_float_drift() -> None:
         reference_year=2025,
     )
     assert res_quarter.iqr[0] == 6
+
+
+def test_births_index_matches_dataframe_scan() -> None:
+    """BirthsIndex produces identical estimates to linear DataFrame scanning."""
+    births = _make_births(
+        [
+            ("CA", "F", 2025, "Lucy", 100),
+            ("NY", "F", 2020, "Lucy", 300),
+            ("CA", "M", 2020, "Lucy", 50),
+        ]
+    )
+    births["state"] = births["state"].astype("category")
+    births["sex"] = births["sex"].astype("category")
+    births["name"] = births["name"].astype("category")
+
+    death_probs = _make_death_probs(year=2025, qx_values=[0.01] * 10)
+    index = BirthsIndex.from_dataframe(births)
+
+    for region in ("US", "CA"):
+        expected = estimate_age_distribution(
+            births, death_probs, name="lucy", sex="F", region=region
+        )
+        actual = estimate_age_distribution(
+            index, death_probs, name="lucy", sex="F", region=region
+        )
+        assert actual.name == expected.name
+        assert actual.median_age == expected.median_age
+        assert actual.mean_age == pytest.approx(expected.mean_age)
+        assert actual.expected_living == pytest.approx(expected.expected_living)
+        pd.testing.assert_frame_equal(actual.distribution, expected.distribution)
+
+
+def test_births_index_non_categorical_mixed_case_and_lowercase_region() -> None:
+    """Non-categorical mixed-case names fold cleanly and lookup normalizes region."""
+    births = _make_births(
+        [
+            ("CA", "F", 2025, "Lucy", 100),
+            ("CA", "F", 2020, "lucy", 300),
+            ("NY", "F", 2018, "LUCY", 50),
+        ]
+    )
+    death_probs = _make_death_probs(year=2025, qx_values=[0.01] * 10)
+    index = BirthsIndex.from_dataframe(births)
+
+    assert len(index.lookup(name="lucy", sex="F", region="ca")) == 2
+    assert len(index.lookup(name="lucy", sex="F", region="us")) == 3
+
+    expected = estimate_age_distribution(
+        births, death_probs, name="LUCY", sex="F", region="ca"
+    )
+    actual = estimate_age_distribution(
+        index, death_probs, name="LUCY", sex="F", region="ca"
+    )
+    assert actual.name == "Lucy"
+    assert actual.median_age == expected.median_age
+    pd.testing.assert_frame_equal(actual.distribution, expected.distribution)
+
+
+def test_births_index_ignores_null_names_and_handles_empty_frames() -> None:
+    """Null names never corrupt neighboring categories or match 'nan'/'none'."""
+    cat_births = pd.DataFrame(
+        {
+            "state": pd.Categorical(["CA", "CA", "CA"]),
+            "sex": pd.Categorical(["F", "F", "F"]),
+            "birth_year": [2025, 2025, 2025],
+            "name": pd.Categorical(["Ada", "Zoe", None], categories=["Ada", "Zoe"]),
+            "count": [10, 20, 999],
+        }
+    )
+    cat_idx = BirthsIndex.from_dataframe(cat_births)
+    assert int(cat_idx.lookup(name="Zoe", sex="F")["count"].sum()) == 20
+    assert cat_idx.lookup(name="nan", sex="F").empty
+
+    # All-null categorical column with zero categories
+    all_null_cat = pd.DataFrame(
+        {
+            "state": pd.Categorical(["CA"]),
+            "sex": pd.Categorical(["F"]),
+            "birth_year": [2025],
+            "name": pd.Categorical([None], categories=[]),
+            "count": [50],
+        }
+    )
+    assert BirthsIndex.from_dataframe(all_null_cat).lookup(name="Ada", sex="F").empty
+
+    # Non-categorical null names do not become literal "nan" or "none"
+    obj_births = pd.DataFrame(
+        {
+            "state": ["CA", "CA", "CA"],
+            "sex": ["F", "F", "F"],
+            "birth_year": [2025, 2025, 2025],
+            "name": ["Ada", None, float("nan")],
+            "count": [10, 50, 75],
+        }
+    )
+    obj_idx = BirthsIndex.from_dataframe(obj_births)
+    assert obj_idx.lookup(name="nan", sex="F").empty
+    assert obj_idx.lookup(name="none", sex="F").empty
+    assert int(obj_idx.lookup(name="Ada", sex="F")["count"].sum()) == 10
+
+    # Columnless empty DataFrame
+    empty_idx = BirthsIndex.from_dataframe(pd.DataFrame())
+    assert empty_idx.empty
+    death_probs = _make_death_probs(year=2025, qx_values=[0.01] * 5)
+    with pytest.raises(ValueError, match="Births dataset is empty"):
+        estimate_age_distribution(empty_idx, death_probs, name="Ada", sex="F")
+
+
+def test_estimate_with_survival_validation_and_missing_latest_year() -> None:
+    """Validate precomputed survival and handle latest_birth_year=None."""
+    births = _make_births([("CA", "F", 2025, "Ada", 100)])
+    death_probs = _make_death_probs(year=2025, qx_values=[0.01] * 5)
+    built = BirthsIndex.from_dataframe(births)
+    no_latest = BirthsIndex(
+        built._frame, built._slices, latest_birth_year=None, regions=built.regions
+    )
+    curve = compute_survival_curve(death_probs, 2025)
+    res = estimate_age_distribution(
+        no_latest, death_probs, name="Ada", sex="F", survival=curve
+    )
+    assert res.reference_year == 2025
+    assert res.median_age == 0
+
+    with pytest.raises(ValueError, match="empty"):
+        estimate_age_distribution(
+            births, death_probs, name="Ada", sex="F", survival=pd.Series(dtype=float)
+        )
+    with pytest.raises(ValueError, match="contiguous"):
+        estimate_age_distribution(
+            births,
+            death_probs,
+            name="Ada",
+            sex="F",
+            survival=pd.Series([1.0, 0.9], index=[1, 0]),
+        )
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        estimate_age_distribution(
+            births,
+            death_probs,
+            name="Ada",
+            sex="F",
+            survival=pd.Series([1.0, float("nan")], index=[0, 1]),
+        )

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from nameage.model import estimate_age_distribution
-from nameage.plot import plot_age_distribution
+from nameage.plot import plot_age_distribution, render_age_distribution
 
 
 def _sample_result(
@@ -72,3 +72,17 @@ def test_plot_rejects_non_positive_max_age(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="max_age must be positive"):
         plot_age_distribution(res, tmp_path / "bad.png", max_age=0)
+
+
+def test_render_age_distribution_bytes_and_validation() -> None:
+    births, death_probs = _sample_result([("CA", "F", 2025, "Ada", 500)])
+    res = estimate_age_distribution(
+        births, death_probs, name="Ada", sex="F", reference_year=2025
+    )
+    png = render_age_distribution(res, fmt="png", dpi=100)
+    svg = render_age_distribution(res, fmt="svg")
+    assert png.startswith(b"\x89PNG")
+    assert b"<svg" in svg
+
+    with pytest.raises(ValueError, match="fmt must be"):
+        render_age_distribution(res, fmt="bmp")  # type: ignore[arg-type]

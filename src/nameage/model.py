@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from nameage.data import Sex
@@ -24,6 +25,118 @@ class NameAgeResult:
     ci90: tuple[int, int]
     expected_living: float
     distribution: pd.DataFrame
+
+
+class BirthsIndex:
+    """Pre-indexed view of a births DataFrame for fast ``(sex, name)`` lookups."""
+
+    def __init__(
+        self,
+        frame: pd.DataFrame,
+        slices: dict[tuple[str, str], tuple[int, int]],
+        *,
+        latest_birth_year: int | None,
+        regions: frozenset[str],
+    ) -> None:
+        self._frame = frame
+        self._slices = slices
+        self.latest_birth_year = latest_birth_year
+        self.regions = regions
+
+    @property
+    def empty(self) -> bool:
+        return self._frame.empty
+
+    @classmethod
+    def from_dataframe(cls, births: pd.DataFrame) -> BirthsIndex:
+        """Build an O(1) lookup index over ``(sex, casefolded name)``."""
+        if births.empty:
+            return cls(
+                pd.DataFrame(columns=["state", "birth_year", "name", "count"]),
+                {},
+                latest_birth_year=None,
+                regions=frozenset(),
+            )
+
+        sex_cat = births["sex"].astype("category")
+        sex_codes = sex_cat.cat.codes.to_numpy()
+        sex_labels = [str(label) for label in sex_cat.cat.categories]
+
+        if isinstance(births["name"].dtype, pd.CategoricalDtype):
+            raw_cats = births["name"].cat.categories
+            folded_map: dict[str, int] = {}
+            folded_labels: list[str] = []
+            cat_to_folded = np.empty(len(raw_cats), dtype=np.int32)
+            for idx, cat in enumerate(raw_cats):
+                folded = str(cat).casefold()
+                fid = folded_map.get(folded)
+                if fid is None:
+                    fid = len(folded_labels)
+                    folded_map[folded] = fid
+                    folded_labels.append(folded)
+                cat_to_folded[idx] = fid
+            raw_codes = births["name"].cat.codes.to_numpy()
+            if len(cat_to_folded) == 0:
+                name_codes = np.full(len(raw_codes), -1, dtype=np.int32)
+            else:
+                name_codes = np.where(
+                    raw_codes >= 0,
+                    cat_to_folded[np.maximum(raw_codes, 0)],
+                    -1,
+                ).astype(np.int32, copy=False)
+        else:
+            folded_series = births["name"].str.casefold()
+            codes_arr, uniques = pd.factorize(folded_series, sort=False)
+            name_codes = codes_arr.astype(np.int32, copy=False)
+            folded_labels = [str(u) for u in uniques]
+        # Stable sort so canonical_name (first occurrence) matches linear scan order.
+        order = np.lexsort((name_codes, sex_codes))
+        sorted_sex = sex_codes[order]
+        sorted_name = name_codes[order]
+
+        sorted_frame = (
+            births.iloc[order]
+            .loc[:, ["state", "birth_year", "name", "count"]]
+            .reset_index(drop=True)
+        )
+
+        n = len(order)
+        change = np.empty(n, dtype=bool)
+        change[0] = True
+        if n > 1:
+            change[1:] = (sorted_sex[1:] != sorted_sex[:-1]) | (
+                sorted_name[1:] != sorted_name[:-1]
+            )
+        starts = np.flatnonzero(change)
+        stops = np.append(starts[1:], n)
+
+        slices: dict[tuple[str, str], tuple[int, int]] = {}
+        for start, stop in zip(starts.tolist(), stops.tolist(), strict=True):
+            s_code = int(sorted_sex[start])
+            n_code = int(sorted_name[start])
+            if s_code >= 0 and n_code >= 0:
+                slices[(sex_labels[s_code], folded_labels[n_code])] = (start, stop)
+
+        latest_birth_year = int(births["birth_year"].max())
+        regions = frozenset(str(s) for s in births["state"].dropna().unique())
+        return cls(
+            sorted_frame,
+            slices,
+            latest_birth_year=latest_birth_year,
+            regions=regions,
+        )
+
+    def lookup(self, *, name: str, sex: Sex, region: str = "US") -> pd.DataFrame:
+        """Return ``[name, birth_year, count]`` rows for ``(name, sex, region)``."""
+        bounds = self._slices.get((sex, name.casefold()))
+        if bounds is None:
+            return self._frame.iloc[0:0][["name", "birth_year", "count"]]
+        start, stop = bounds
+        subset = self._frame.iloc[start:stop]
+        normalized_region = region.upper()
+        if normalized_region != "US":
+            subset = subset.loc[subset["state"] == normalized_region]
+        return subset[["name", "birth_year", "count"]]
 
 
 def _quantile_age(cdf: pd.Series, q: float) -> int:
@@ -85,8 +198,33 @@ def compute_survival_curve(death_probs: pd.DataFrame, year: int) -> pd.Series:
     return survival
 
 
+def _validate_survival_curve(survival: pd.Series) -> pd.Series:
+    """Validate a caller-supplied survival curve matches ``compute_survival_curve``."""
+    if survival.empty:
+        raise ValueError("Survival curve is empty.")
+    try:
+        ages = survival.index.astype("int64")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Survival curve ages must be integers.") from exc
+    expected_ages = pd.RangeIndex(start=0, stop=len(survival))
+    if not ages.equals(expected_ages):
+        raise ValueError(
+            f"Survival curve ages must be contiguous 0..{len(survival) - 1}."
+        )
+    values = survival.astype("float64")
+    if (
+        values.isna().any()
+        or not np.isfinite(values.to_numpy()).all()
+        or ((values < 0.0) | (values > 1.0)).any()
+    ):
+        raise ValueError("Survival probabilities must be finite values in [0, 1].")
+    validated = pd.Series(values.to_numpy(), index=expected_ages, name="survival_prob")
+    validated.index.name = "age"
+    return validated
+
+
 def estimate_age_distribution(
-    births: pd.DataFrame,
+    births: pd.DataFrame | BirthsIndex,
     death_probs: pd.DataFrame,
     *,
     name: str,
@@ -95,11 +233,13 @@ def estimate_age_distribution(
     reference_year: int | None = None,
     min_age: int | None = None,
     max_age: int | None = None,
+    survival: pd.Series | None = None,
 ) -> NameAgeResult:
     """Estimate born counts, expected living counts, and age quantiles for a name.
 
     Args:
-        births: DataFrame with ``state``, ``sex``, ``birth_year``, ``name``, ``count``.
+        births: DataFrame or ``BirthsIndex`` with ``state``, ``sex``,
+            ``birth_year``, ``name``, ``count``.
         death_probs: Period death-probability table indexed by year with age columns.
         name: First name (case-insensitive match against SSA title-cased names).
         sex: ``"F"`` or ``"M"``.
@@ -109,6 +249,9 @@ def estimate_age_distribution(
         min_age: Optional inclusive lower age bound for conditioning the posterior
             (e.g., ``18`` for adults).
         max_age: Optional inclusive upper age bound for conditioning the posterior.
+        survival: Optional precomputed survival curve (contiguous ages ``0..N-1``
+            with probabilities in ``[0, 1]``). When omitted, computed from
+            ``death_probs`` at ``reference_year``.
     """
     if sex not in ("F", "M"):
         raise ValueError(f"sex must be 'F' or 'M', got {sex!r}")
@@ -126,19 +269,32 @@ def estimate_age_distribution(
         raise ValueError("Births dataset is empty.")
 
     normalized_region = region.upper()
-    ref_year = (
-        reference_year
-        if reference_year is not None
-        else int(births["birth_year"].max())
+    if reference_year is not None:
+        ref_year = reference_year
+    elif isinstance(births, BirthsIndex):
+        ref_year = (
+            births.latest_birth_year
+            if births.latest_birth_year is not None
+            else int(births._frame["birth_year"].max())
+        )
+    else:
+        ref_year = int(births["birth_year"].max())
+
+    survival_curve = (
+        _validate_survival_curve(survival)
+        if survival is not None
+        else compute_survival_curve(death_probs, ref_year)
     )
 
-    survival = compute_survival_curve(death_probs, ref_year)
-
-    mask = (births["sex"] == sex) & (births["name"].str.casefold() == name.casefold())
-    if normalized_region != "US":
-        mask &= births["state"] == normalized_region
-
-    subset = births.loc[mask, ["name", "birth_year", "count"]]
+    if isinstance(births, BirthsIndex):
+        subset = births.lookup(name=name, sex=sex, region=normalized_region)
+    else:
+        mask = (births["sex"] == sex) & (
+            births["name"].str.casefold() == name.casefold()
+        )
+        if normalized_region != "US":
+            mask &= births["state"] == normalized_region
+        subset = births.loc[mask, ["name", "birth_year", "count"]]
     if subset.empty:
         raise ValueError(
             f"No birth records found for name={name!r}, sex={sex!r}, "
@@ -161,7 +317,7 @@ def estimate_age_distribution(
             f"name={canonical_name!r}, sex={sex!r}, region={normalized_region!r}."
         )
 
-    if born_by_age.index.intersection(survival.index).empty:
+    if born_by_age.index.intersection(survival_curve.index).empty:
         raise ValueError(
             f"No overlapping ages between births and mortality table for "
             f"{canonical_name!r}."
@@ -170,10 +326,10 @@ def estimate_age_distribution(
     # Reindex onto the full contiguous survival curve so zero-birth ages remain 0.
     dist = pd.DataFrame(
         {
-            "born": born_by_age.reindex(survival.index, fill_value=0),
-            "survival_prob": survival,
+            "born": born_by_age.reindex(survival_curve.index, fill_value=0),
+            "survival_prob": survival_curve,
         },
-        index=survival.index,
+        index=survival_curve.index,
     )
     if min_age is not None or max_age is not None:
         lower = min_age if min_age is not None else int(dist.index.min())
@@ -182,7 +338,7 @@ def estimate_age_distribution(
         if dist.empty:
             raise ValueError(
                 f"Age range [{lower}, {upper}] does not overlap mortality table "
-                f"({int(survival.index.min())}–{int(survival.index.max())})."
+                f"({int(survival_curve.index.min())}–{int(survival_curve.index.max())})."
             )
 
     dist["expected_living"] = dist["born"] * dist["survival_prob"]

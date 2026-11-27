@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.pyc
+ds/
+examples/
+output/
+tests/
+*.png
+*.pdf
+*.svg
