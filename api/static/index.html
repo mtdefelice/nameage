@@ -127,6 +127,21 @@
       <section id="results" class="results" hidden aria-live="polite">
         <div id="warning-banner" class="alert alert-warning" hidden></div>
 
+        <article class="card chart-card">
+          <div class="chart-header">
+            <h2 id="chart-title">Age distribution</h2>
+            <div class="chart-actions">
+              <a id="download-svg" class="btn-secondary" download>Download SVG</a>
+              <a id="download-png" class="btn-secondary" download>Download PNG</a>
+            </div>
+          </div>
+          <div class="chart-frame">
+            <div id="chart-loading" class="chart-loading" hidden>
+              Rendering SVG…
+            </div>
+            <img id="chart-img" alt="Age distribution chart" hidden />
+          </div>
+        </article>
         <div class="stats-grid">
           <article class="card stat-card">
             <span class="stat-label">Median age</span>
@@ -150,21 +165,6 @@
           </article>
         </div>
 
-        <article class="card chart-card">
-          <div class="chart-header">
-            <h2 id="chart-title">Age distribution</h2>
-            <div class="chart-actions">
-              <a id="download-svg" class="btn-secondary" download>Download SVG</a>
-              <a id="download-png" class="btn-secondary" download>Download PNG</a>
-            </div>
-          </div>
-          <div class="chart-frame">
-            <div id="chart-loading" class="chart-loading" hidden>
-              Rendering SVG…
-            </div>
-            <img id="chart-img" alt="Age distribution chart" hidden />
-          </div>
-        </article>
       </section>
 
       <footer class="footer">
