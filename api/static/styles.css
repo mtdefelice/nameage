@@ -332,7 +332,7 @@ h1 {
 }
 
 .chart-frame {
-  background: #ffffff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.5rem;
@@ -350,7 +350,7 @@ h1 {
 }
 
 .chart-loading {
-  color: #475569;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 

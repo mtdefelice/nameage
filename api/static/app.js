@@ -169,6 +169,12 @@
 
     chartTitle.textContent = `${data.name} — ${data.region} (${data.sex}, ${data.reference_year})`;
 
+    const previewParams = new URLSearchParams(params);
+    previewParams.set("format", "svg");
+    previewParams.set("theme", currentTheme());
+    previewParams.set("transparent", "true");
+    const previewUrl = `/v1/plot?${previewParams.toString()}`;
+
     const svgParams = new URLSearchParams(params);
     svgParams.set("format", "svg");
     const svgUrl = `/v1/plot?${svgParams.toString()}`;
@@ -183,9 +189,23 @@
     downloadPng.href = pngUrl;
     downloadPng.download = `${slug}.png`;
 
+    lastPreviewBaseParams = new URLSearchParams(params);
+    loadPreviewChart(previewUrl, data);
+    resultsSection.hidden = false;
+  }
+  const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+  let lastPreviewBaseParams = null;
+
+  function currentTheme() {
+    return darkScheme.matches ? "dark" : "light";
+  }
+
+  function loadPreviewChart(url, data) {
     chartLoading.hidden = false;
     chartImg.hidden = true;
-    chartImg.alt = `Estimated living age distribution for ${data.name} (${data.sex}, ${data.region}, ${data.reference_year})`;
+    if (data) {
+      chartImg.alt = `Estimated living age distribution for ${data.name} (${data.sex}, ${data.region}, ${data.reference_year})`;
+    }
     chartImg.onload = () => {
       chartLoading.hidden = true;
       chartImg.hidden = false;
@@ -194,10 +214,18 @@
       chartLoading.hidden = true;
       showError("Chart could not be rendered right now. Please try again.");
     };
-    chartImg.src = svgUrl;
-
-    resultsSection.hidden = false;
+    chartImg.src = url;
   }
+
+  darkScheme.addEventListener("change", () => {
+    if (!lastPreviewBaseParams || resultsSection.hidden) return;
+    const previewParams = new URLSearchParams(lastPreviewBaseParams);
+    previewParams.set("format", "svg");
+    previewParams.set("theme", currentTheme());
+    previewParams.set("transparent", "true");
+    loadPreviewChart(`/v1/plot?${previewParams.toString()}`);
+  });
+
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();

@@ -312,3 +312,26 @@ def test_web_ui_and_static_assets() -> None:
         js = client.get("/static/app.js")
         assert js.status_code == 200
         assert "javascript" in js.headers["content-type"]
+
+
+def test_plot_theme_and_transparent_cache_separation() -> None:
+    app = create_app(store=_make_store())
+    with TestClient(app) as client:
+        light = client.get(
+            "/v1/plot",
+            params={"name": "Lucy", "sex": "F", "format": "svg", "theme": "light"},
+        )
+        dark = client.get(
+            "/v1/plot",
+            params={
+                "name": "Lucy",
+                "sex": "F",
+                "format": "svg",
+                "theme": "dark",
+                "transparent": "true",
+            },
+        )
+        assert light.status_code == 200
+        assert dark.status_code == 200
+        assert light.content != dark.content
+        assert b"#e2e8f0" in dark.content

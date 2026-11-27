@@ -19,7 +19,7 @@ from api.config import Settings
 from api.schemas import EstimateResponse, HealthResponse, MetadataResponse
 from api.store import InvalidQueryError, NameAgeStore, NameNotFoundError
 from nameage.data import Sex
-from nameage.plot import PlotFormat, render_age_distribution
+from nameage.plot import PlotFormat, PlotTheme, render_age_distribution
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _MEDIA_TYPES: dict[PlotFormat, str] = {
@@ -35,7 +35,7 @@ _PLOT_CSP: dict[PlotFormat, str] = {
 }
 
 type _PlotCacheKey = tuple[
-    str, Sex, str, int, int | None, int | None, PlotFormat, int, int
+    str, Sex, str, int, int | None, int | None, PlotFormat, int, int, PlotTheme, bool
 ]
 
 
@@ -212,6 +212,8 @@ def create_app(
         fmt: Annotated[Literal["png", "svg", "pdf"], Query(alias="format")] = "png",
         plot_max_age: Annotated[int, Query(ge=1, le=120)] = 100,
         dpi: Annotated[int, Query(ge=72, le=300)] = 150,
+        theme: PlotTheme = "light",
+        transparent: bool = False,
     ) -> Response:
         result, _ = data_store.estimate(
             name=name,
@@ -231,6 +233,8 @@ def create_app(
             fmt,
             plot_max_age,
             dpi,
+            theme,
+            transparent,
         )
         payload = plot_cache.get(cache_key)
         if payload is None:
@@ -248,6 +252,8 @@ def create_app(
                         fmt=fmt,
                         max_age=plot_max_age,
                         dpi=dpi,
+                        theme=theme,
+                        transparent=transparent,
                     )
                     plot_cache.put(cache_key, payload)
             finally:

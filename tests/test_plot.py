@@ -86,3 +86,10 @@ def test_render_age_distribution_bytes_and_validation() -> None:
 
     with pytest.raises(ValueError, match="fmt must be"):
         render_age_distribution(res, fmt="bmp")  # type: ignore[arg-type]
+
+    dark_svg = render_age_distribution(res, fmt="svg", theme="dark", transparent=True)
+    assert b"<svg" in dark_svg
+    assert b"#e2e8f0" in dark_svg
+
+    with pytest.raises(ValueError, match="theme must be"):
+        render_age_distribution(res, theme="sepia")  # type: ignore[arg-type]
