@@ -28,6 +28,7 @@ RUN useradd --create-home --uid 10001 appuser
 
 WORKDIR /app
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --chown=appuser:appuser ds /data
 
 USER appuser
 EXPOSE 8000

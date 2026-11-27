@@ -6,7 +6,7 @@
 .mypy_cache
 __pycache__
 *.pyc
-ds/
+ds/*.zip
 examples/
 output/
 tests/

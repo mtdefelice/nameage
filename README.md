@@ -75,21 +75,23 @@ Open the web UI at `http://localhost:8000/` or interactive OpenAPI docs at `http
 
 ### Docker
 
-Build from the repository root and mount `ds/` read-only at `/data`:
+Ensure the SSA datasets are present in `ds/` (see [Updating the Source Data](#updating-the-source-data)), then build and run the self-contained image (includes the API, web UI, and `ds/` baked into `/data`):
 
 ```bash
 docker build -f api/Dockerfile -t nameage-api .
-docker run --rm -p 8000:8000 -v "$(pwd)/ds:/data:ro" nameage-api
+docker run --rm -p 8000:8000 nameage-api
 ```
+
+You can still override the baked-in dataset at runtime by mounting a different directory at `/data` (`-v /path/to/ds:/data:ro`).
 
 ### Repository Layout
 
 ```text
 nameage/
 ├── src/nameage/      # Core library (data, indexed model, thread-safe plot) + CLI
-├── api/              # FastAPI service (app, store, schemas, config) + Dockerfile
+├── api/              # FastAPI service, static web UI (api/static/), and Dockerfile
 ├── tests/            # Unit and integration tests (core, CLI, API)
-└── ds/               # Gitignored SSA datasets (mounted into container at /data)
+└── ds/               # Gitignored SSA datasets (baked into container at /data)
 ```
 
 ## Methodology & Caveats
