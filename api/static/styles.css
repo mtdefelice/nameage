@@ -89,6 +89,15 @@ h1 {
   font-size: 0.95rem;
 }
 
+.subtitle a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.subtitle a:hover {
+  text-decoration: underline;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

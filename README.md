@@ -1,6 +1,6 @@
 # nameage
 
-Estimate the living age distribution and median age of people in the United States (nationally or by state) with a given first name, using U.S. Social Security Administration (SSA) baby-name birth counts and actuarial death-probability tables.
+Estimate the living age distribution and median age of people in the United States (nationally or by state) with a given first name, using U.S. Social Security Administration (SSA) baby-name birth counts and actuarial death-probability tables. Inspired by FiveThirtyEight's 2014 article [*How to Tell Someone's Age When All You Know Is Her Name*](https://web.archive.org/web/20240413083600/https://fivethirtyeight.com/features/how-to-tell-someones-age-when-all-you-know-is-her-name/) (archived).
 
 ## Quick Start
 

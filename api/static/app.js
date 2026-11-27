@@ -165,9 +165,9 @@
     statMeanMode.textContent = `${data.mean_age.toFixed(1)} / ${data.mode_age}`;
     statCi90.textContent = `90% interval: ${data.ci90[0]} – ${data.ci90[1]}`;
     statLiving.textContent = fmtInt.format(Math.round(data.expected_living));
-    statContext.textContent = `${data.name} (${data.sex}, ${data.region}, ${data.reference_year})`;
+    statContext.textContent = `${data.name} (${data.region}, ${data.sex}, ${data.reference_year})`;
 
-    chartTitle.textContent = `${data.name} — ${data.region} (${data.sex}, ${data.reference_year})`;
+    chartTitle.textContent = `${data.name} (${data.region}, ${data.sex}, ${data.reference_year})`;
 
     const previewParams = new URLSearchParams(params);
     previewParams.set("format", "svg");
